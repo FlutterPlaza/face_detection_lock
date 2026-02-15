@@ -6,18 +6,19 @@ void main() => runApp(const MyApp());
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
       create: (context) =>
-          FaceDetectionBloc()..add(const FaceDetectionEvent.initializeCam()),
+          FaceDetectionBloc()..add(const InitializeCam()),
       child: MaterialApp(
         title: 'Material App',
         home: Scaffold(
           appBar: AppBar(
             title: const Text('Material App Bar'),
           ),
-          body: Center(
+          body: const Center(
             child: Text('text'),
           ),
         ),
