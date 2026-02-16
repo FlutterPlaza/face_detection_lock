@@ -31,6 +31,10 @@ class FallbackVerificationProvider implements FaceVerificationProvider {
 
   /// Optional callback invoked when the fallback is used.
   /// Receives the error and stack trace from the primary.
+  ///
+  /// **Privacy note:** The [error] object may contain PII (e.g. face
+  /// template data or API response bodies). Do not log it in production
+  /// or transmit it to external services without sanitization.
   final void Function(Object error, StackTrace stack)? onFallback;
 
   @override
@@ -75,7 +79,9 @@ class FallbackVerificationProvider implements FaceVerificationProvider {
     try {
       return await primaryFn();
     } catch (e, stack) {
-      debugPrint('Primary provider failed, using fallback: $e');
+      if (kDebugMode) {
+        debugPrint('Primary provider failed, using fallback');
+      }
       onFallback?.call(e, stack);
       return fallbackFn();
     }

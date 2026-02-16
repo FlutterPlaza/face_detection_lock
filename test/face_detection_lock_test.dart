@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:http/http.dart' as http;
@@ -55,6 +56,24 @@ void main() {
       );
       expect(widget.verificationProvider, same(provider));
     });
+
+    test('accepts maxFaces and multiFacePolicy parameters', () {
+      const widget = FaceDetectionLock(
+        body: Text('Secure'),
+        maxFaces: 1,
+        multiFacePolicy: MultiFacePolicy.unlockIfAllMatch,
+      );
+      expect(widget.maxFaces, 1);
+      expect(widget.multiFacePolicy, MultiFacePolicy.unlockIfAllMatch);
+    });
+
+    test('accepts tooManyFacesScreen parameter', () {
+      const widget = FaceDetectionLock(
+        body: Text('Main'),
+        tooManyFacesScreen: Text('Too many'),
+      );
+      expect(widget.tooManyFacesScreen, isNotNull);
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -104,6 +123,49 @@ void main() {
       );
       expect(bloc.verificationProvider, same(provider));
       expect(bloc.enableLiveness, isFalse);
+      bloc.close();
+    });
+
+    test('accepts maxFaces and multiFacePolicy parameters', () {
+      final bloc = FaceDetectionBloc(
+        maxFaces: 1,
+        multiFacePolicy: MultiFacePolicy.unlockIfAnyMatch,
+      );
+      expect(bloc.maxFaces, 1);
+      expect(bloc.multiFacePolicy, MultiFacePolicy.unlockIfAnyMatch);
+      bloc.close();
+    });
+
+    test('maxFaces defaults to null and multiFacePolicy to lockIfMultiple', () {
+      final bloc = FaceDetectionBloc();
+      expect(bloc.maxFaces, isNull);
+      expect(bloc.multiFacePolicy, MultiFacePolicy.lockIfMultiple);
+      bloc.close();
+    });
+
+    test('accepts battery-aware parameters', () {
+      final bloc = FaceDetectionBloc(
+        batteryAwareMode: true,
+        batteryThreshold: 30,
+        lowBatteryDetectionInterval: const Duration(milliseconds: 2000),
+      );
+      expect(bloc.batteryAwareMode, isTrue);
+      expect(bloc.batteryThreshold, 30);
+      expect(
+        bloc.lowBatteryDetectionInterval,
+        const Duration(milliseconds: 2000),
+      );
+      bloc.close();
+    });
+
+    test('battery-aware defaults are off with threshold 20 and 1000ms', () {
+      final bloc = FaceDetectionBloc();
+      expect(bloc.batteryAwareMode, isFalse);
+      expect(bloc.batteryThreshold, 20);
+      expect(
+        bloc.lowBatteryDetectionInterval,
+        const Duration(milliseconds: 1000),
+      );
       bloc.close();
     });
   });
@@ -324,6 +386,97 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
+  // SecureTemplateStore tests
+  // ---------------------------------------------------------------------------
+  group('SecureTemplateStore', () {
+    late _FakeSecureStorage fakeStorage;
+    late SecureTemplateStore store;
+
+    setUp(() {
+      fakeStorage = _FakeSecureStorage();
+      store = SecureTemplateStore(storage: fakeStorage);
+    });
+
+    test('save and retrieve a template', () async {
+      final template = FaceTemplate(
+        id: 't1',
+        label: 'Alice',
+        features: [0.1, 0.2, 0.3],
+      );
+      await store.save(template);
+
+      final retrieved = await store.get('t1');
+      expect(retrieved, isNotNull);
+      expect(retrieved!.id, 't1');
+      expect(retrieved.label, 'Alice');
+      expect(retrieved.features, [0.1, 0.2, 0.3]);
+    });
+
+    test('get returns null for missing template', () async {
+      final result = await store.get('nonexistent');
+      expect(result, isNull);
+    });
+
+    test('getAll returns all saved templates', () async {
+      await store.save(FaceTemplate(id: 'a', label: 'A', features: [1.0]));
+      await store.save(FaceTemplate(id: 'b', label: 'B', features: [2.0]));
+
+      final all = await store.getAll();
+      expect(all.length, 2);
+      expect(all.map((t) => t.id).toSet(), {'a', 'b'});
+    });
+
+    test('save overwrites existing template', () async {
+      await store.save(FaceTemplate(id: 'x', label: 'Old', features: [1.0]));
+      await store.save(FaceTemplate(id: 'x', label: 'New', features: [2.0]));
+
+      final all = await store.getAll();
+      expect(all.length, 1);
+      expect(all.first.label, 'New');
+    });
+
+    test('delete removes a template', () async {
+      await store.save(FaceTemplate(id: 'x', label: 'X', features: [1.0]));
+      await store.delete('x');
+
+      expect(await store.get('x'), isNull);
+      expect(await store.getAll(), isEmpty);
+    });
+
+    test('delete non-existent template is no-op', () async {
+      await store.save(FaceTemplate(id: 'a', label: 'A', features: [1.0]));
+      await store.delete('nonexistent');
+
+      final all = await store.getAll();
+      expect(all.length, 1);
+    });
+
+    test('clear removes all templates', () async {
+      await store.save(FaceTemplate(id: 'a', label: 'A', features: [1.0]));
+      await store.save(FaceTemplate(id: 'b', label: 'B', features: [2.0]));
+      await store.clear();
+
+      expect(await store.getAll(), isEmpty);
+      expect(await store.get('a'), isNull);
+      expect(await store.get('b'), isNull);
+    });
+
+    test('preserves template createdAt through round-trip', () async {
+      final date = DateTime(2025, 6, 15, 12, 30);
+      final template = FaceTemplate(
+        id: 'dt',
+        label: 'Date Test',
+        features: [1.0, 2.0],
+        createdAt: date,
+      );
+      await store.save(template);
+
+      final retrieved = await store.get('dt');
+      expect(retrieved!.createdAt, date);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // FallbackVerificationProvider tests
   // ---------------------------------------------------------------------------
   group('FallbackVerificationProvider', () {
@@ -537,6 +690,57 @@ void main() {
       expect(exception.toString(), contains('401'));
       expect(exception.toString(), contains('Unauthorized'));
     });
+
+    test('error response contains generic status text, not raw body (4xx)',
+        () async {
+      final mockClient = MockClient((_) async {
+        return http.Response(
+          '{"error": "detailed PII info about user@example.com"}',
+          400,
+        );
+      });
+
+      final provider = FaceGateCloudProvider(
+        baseUrl: 'https://api.example.com',
+        httpClient: mockClient,
+      );
+
+      try {
+        await provider.listTemplates();
+        fail('Should have thrown');
+      } on FaceGateCloudException catch (e) {
+        expect(e.statusCode, 400);
+        expect(e.message, 'Bad Request');
+        expect(e.message, isNot(contains('user@example.com')));
+      }
+      provider.close();
+    });
+
+    test('error response contains generic status text, not raw body (5xx)',
+        () async {
+      final mockClient = MockClient((_) async {
+        return http.Response(
+          'Internal stack trace with sensitive data',
+          500,
+        );
+      });
+
+      final provider = FaceGateCloudProvider(
+        baseUrl: 'https://api.example.com',
+        httpClient: mockClient,
+        retryCount: 0,
+      );
+
+      try {
+        await provider.listTemplates();
+        fail('Should have thrown');
+      } on FaceGateCloudException catch (e) {
+        expect(e.statusCode, 500);
+        expect(e.message, 'Server Error');
+        expect(e.message, isNot(contains('stack trace')));
+      }
+      provider.close();
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -552,6 +756,11 @@ void main() {
       const state = FaceDetectionUnverified();
       expect(state.confidence, 0.0);
     });
+
+    test('FaceDetectionTooManyFaces carries count', () {
+      const state = FaceDetectionTooManyFaces(count: 5);
+      expect(state.count, 5);
+    });
   });
 
   group('MultiFacePolicy', () {
@@ -565,6 +774,55 @@ void main() {
 }
 
 // -- Test helpers -------------------------------------------------------------
+
+/// Fake in-memory implementation of [FlutterSecureStorage] for tests.
+class _FakeSecureStorage extends Fake implements FlutterSecureStorage {
+  final Map<String, String> _data = {};
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    if (value == null) {
+      _data.remove(key);
+    } else {
+      _data[key] = value;
+    }
+  }
+
+  @override
+  Future<String?> read({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    return _data[key];
+  }
+
+  @override
+  Future<void> delete({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    _data.remove(key);
+  }
+}
 
 /// A provider that always throws, used to test fallback behavior.
 class _FailingProvider implements FaceVerificationProvider {

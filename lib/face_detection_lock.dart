@@ -26,4 +26,6 @@ export 'infrastructure/face_gate_cloud_provider.dart';
 export 'infrastructure/fallback_verification_provider.dart';
 export 'infrastructure/liveness_checker.dart';
 export 'infrastructure/local_face_verification.dart';
+export 'infrastructure/secure_template_store.dart';
+export 'view/face_bounding_box_overlay.dart';
 export 'view/face_detection_widget.dart';

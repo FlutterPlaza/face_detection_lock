@@ -234,8 +234,22 @@ class FaceGateCloudProvider implements FaceVerificationProvider {
 
     throw FaceGateCloudException(
       statusCode: response.statusCode,
-      message: response.body,
+      message: _statusText(response.statusCode),
     );
+  }
+
+  static String _statusText(int statusCode) {
+    return switch (statusCode) {
+      400 => 'Bad Request',
+      401 => 'Unauthorized',
+      403 => 'Forbidden',
+      404 => 'Not Found',
+      409 => 'Conflict',
+      422 => 'Unprocessable Entity',
+      429 => 'Too Many Requests',
+      >= 500 => 'Server Error',
+      _ => 'Request Failed',
+    };
   }
 
   Future<T> _withRetry<T>(Future<T> Function() fn) async {
@@ -247,9 +261,11 @@ class FaceGateCloudProvider implements FaceVerificationProvider {
         lastError = e;
         final isRetryable = _isRetryable(e);
         if (!isRetryable || attempt == retryCount) rethrow;
-        debugPrint(
-          'FaceGateCloud: attempt ${attempt + 1} failed, retrying: $e',
-        );
+        if (kDebugMode) {
+          debugPrint(
+            'FaceGateCloud: attempt ${attempt + 1} failed, retrying',
+          );
+        }
       }
     }
     // Unreachable, but satisfies the type system.

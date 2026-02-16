@@ -16,7 +16,9 @@ Future<CameraDescription?> getCamera(CameraLensDirection dir) async {
       orElse: () => cameras[0],
     );
   } on CameraException catch (e) {
-    debugPrint('getCamera error: $e');
+    if (kDebugMode) {
+      debugPrint('getCamera error: ${e.code}');
+    }
     return null;
   }
 }

@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:battery_plus/battery_plus.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import '../../core/utils.dart';
+import '../../domain/face_template.dart';
 import '../../domain/face_verification_provider.dart';
 
 part 'face_detection_event.dart';
@@ -63,6 +65,26 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
   /// Only used when [verificationProvider] is set. Defaults to true.
   final bool enableLiveness;
 
+  /// Maximum number of faces allowed before locking.
+  /// When `null` (default), any number of faces is accepted.
+  final int? maxFaces;
+
+  /// Policy for handling multiple detected faces.
+  /// Only applies when [maxFaces] is set. Defaults to [MultiFacePolicy.lockIfMultiple].
+  final MultiFacePolicy multiFacePolicy;
+
+  /// Whether to reduce detection frequency when battery is low.
+  /// Defaults to `false` (opt-in).
+  final bool batteryAwareMode;
+
+  /// Battery level (0–100) below which low-battery detection interval applies.
+  /// Only used when [batteryAwareMode] is `true`. Defaults to 20.
+  final int batteryThreshold;
+
+  /// Detection interval used when battery is below [batteryThreshold].
+  /// Only used when [batteryAwareMode] is `true`. Defaults to 1000ms.
+  final Duration lowBatteryDetectionInterval;
+
   CameraController? _cameraController;
   CameraDescription? _description;
   FaceDetector? _faceDetector;
@@ -74,6 +96,11 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
   Timer? _unlockTimer;
   // Track the previous state before pause so we can restore it.
   FaceDetectionState? _stateBeforePause;
+
+  // Battery-aware state.
+  final Battery _battery;
+  int? _cachedBatteryLevel;
+  DateTime _lastBatteryCheck = DateTime.fromMillisecondsSinceEpoch(0);
 
   FaceDetectionBloc({
     this.onFaceSnapshot,
@@ -87,7 +114,14 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
     this.minFaceSize = 0.15,
     this.verificationProvider,
     this.enableLiveness = true,
-  }) : super(const FaceDetectionInitial()) {
+    this.maxFaces,
+    this.multiFacePolicy = MultiFacePolicy.lockIfMultiple,
+    this.batteryAwareMode = false,
+    this.batteryThreshold = 20,
+    this.lowBatteryDetectionInterval = const Duration(milliseconds: 1000),
+    Battery? battery,
+  })  : _battery = battery ?? Battery(),
+        super(const FaceDetectionInitial()) {
     on<InitializeCam>(_onInitializeCam);
     on<FaceDetected>(_onFaceDetected);
     on<NoFaceDetected>(_onNoFace);
@@ -96,6 +130,7 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
     on<_DebouncedLock>((_, emit) => emit(const FaceDetectionNoFace()));
     on<_DebouncedUnlock>((_, emit) => emit(const FaceDetectionSuccess()));
     on<_FaceUnverified>(_onFaceUnverified);
+    on<_TooManyFaces>(_onTooManyFaces);
   }
 
   // -- Event handlers --------------------------------------------------------
@@ -237,12 +272,37 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
 
   // -- Frame processing ------------------------------------------------------
 
+  /// Returns the effective detection interval, accounting for battery level
+  /// when [batteryAwareMode] is enabled.
+  Future<Duration> _effectiveDetectionInterval() async {
+    if (!batteryAwareMode) return detectionInterval;
+
+    final now = DateTime.now();
+    // Refresh battery level every 30 seconds to avoid per-frame queries.
+    if (_cachedBatteryLevel == null ||
+        now.difference(_lastBatteryCheck).inSeconds >= 30) {
+      try {
+        _cachedBatteryLevel = await _battery.batteryLevel;
+        _lastBatteryCheck = now;
+      } catch (_) {
+        // Battery query failed — fall back to normal interval.
+        return detectionInterval;
+      }
+    }
+
+    if (_cachedBatteryLevel! <= batteryThreshold) {
+      return lowBatteryDetectionInterval;
+    }
+    return detectionInterval;
+  }
+
   Future<void> _processImage(CameraImage image) async {
     if (_isDetecting || _isClosed || _isPaused) return;
 
     // Frame throttling — skip if within the detection interval.
     final now = DateTime.now();
-    if (now.difference(_lastDetectionTime) < detectionInterval) return;
+    final interval = await _effectiveDetectionInterval();
+    if (now.difference(_lastDetectionTime) < interval) return;
     _lastDetectionTime = now;
 
     _isDetecting = true;
@@ -265,8 +325,17 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
       if (faces.isNotEmpty) {
         onFaceSnapshot?.call(faces);
 
+        // Multi-face policy check.
+        if (maxFaces != null && faces.length > maxFaces!) {
+          if (multiFacePolicy == MultiFacePolicy.lockIfMultiple) {
+            add(_TooManyFaces(count: faces.length));
+            return;
+          }
+          // unlockIfAnyMatch / unlockIfAllMatch proceed to verification.
+        }
+
         if (verificationProvider != null) {
-          await _verifyFace(faces);
+          await _verifyFaces(faces);
         } else {
           add(const FaceDetected());
         }
@@ -274,7 +343,9 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
         add(const NoFaceDetected());
       }
     } catch (e) {
-      debugPrint('Face detection error: $e');
+      if (kDebugMode) {
+        debugPrint('Face detection error');
+      }
     } finally {
       _isDetecting = false;
     }
@@ -292,7 +363,13 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
     });
   }
 
-  Future<void> _verifyFace(List<Face> faces) async {
+  Future<void> _verifyFaces(List<Face> faces) async {
+    // When unlockIfAllMatch, verify every face. Otherwise verify the best one.
+    if (multiFacePolicy == MultiFacePolicy.unlockIfAllMatch &&
+        faces.length > 1) {
+      return _verifyAllFaces(faces);
+    }
+
     final face = _selectBestFace(faces);
 
     // Liveness check — treat spoofed faces as "no face".
@@ -314,6 +391,38 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
     }
   }
 
+  /// Verify ALL faces — only unlock if every face matches.
+  Future<void> _verifyAllFaces(List<Face> faces) async {
+    var worstConfidence = 1.0;
+
+    for (final face in faces) {
+      if (_isClosed) return;
+
+      if (enableLiveness) {
+        final liveness = await verificationProvider!.checkLiveness(face);
+        if (!liveness.isLive) {
+          add(const NoFaceDetected());
+          return;
+        }
+      }
+
+      final result = await verificationProvider!.verify(face);
+      if (_isClosed) return;
+
+      if (!result.isMatch) {
+        add(_FaceUnverified(confidence: result.confidence));
+        return;
+      }
+
+      if (result.confidence < worstConfidence) {
+        worstConfidence = result.confidence;
+      }
+    }
+
+    // All faces matched.
+    add(const FaceDetected());
+  }
+
   void _onFaceUnverified(
     _FaceUnverified event,
     Emitter<FaceDetectionState> emit,
@@ -322,6 +431,15 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
     _unlockTimer?.cancel();
     _lockTimer?.cancel();
     emit(FaceDetectionUnverified(confidence: event.confidence));
+  }
+
+  void _onTooManyFaces(
+    _TooManyFaces event,
+    Emitter<FaceDetectionState> emit,
+  ) {
+    _unlockTimer?.cancel();
+    _lockTimer?.cancel();
+    emit(FaceDetectionTooManyFaces(count: event.count));
   }
 
   // -- Cleanup ---------------------------------------------------------------
@@ -360,4 +478,9 @@ final class _DebouncedUnlock extends FaceDetectionEvent {
 final class _FaceUnverified extends FaceDetectionEvent {
   const _FaceUnverified({this.confidence = 0.0});
   final double confidence;
+}
+
+final class _TooManyFaces extends FaceDetectionEvent {
+  const _TooManyFaces({required this.count});
+  final int count;
 }
