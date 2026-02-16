@@ -10,8 +10,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (context) =>
-          FaceDetectionBloc()..add(const InitializeCam()),
+      create: (context) => FaceDetectionBloc()..add(const InitializeCam()),
       child: MaterialApp(
         title: 'Material App',
         home: Scaffold(

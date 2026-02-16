@@ -76,8 +76,7 @@ void main() {
       expect(find.text('BODY'), findsOneWidget);
     });
 
-    testWidgets('Multi-face lockout: Success → TooManyFaces',
-        (tester) async {
+    testWidgets('Multi-face lockout: Success → TooManyFaces', (tester) async {
       whenListen(
         mockBloc,
         Stream.fromIterable(const [

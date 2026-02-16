@@ -28,6 +28,7 @@ void main() {
     Widget? permissionDeniedScreen,
     Widget? pausedScreen,
     Widget? unverifiedScreen,
+    Widget? tooManyFacesScreen,
     Widget Function(String)? errorScreen,
   }) {
     return MaterialApp(
@@ -42,6 +43,7 @@ void main() {
           permissionDeniedScreen: permissionDeniedScreen,
           pausedScreen: pausedScreen,
           unverifiedScreen: unverifiedScreen,
+          tooManyFacesScreen: tooManyFacesScreen,
           errorScreen: errorScreen,
         ),
       ),
@@ -198,6 +200,29 @@ void main() {
       ));
 
       expect(find.text('ERR: Oops'), findsOneWidget);
+    });
+
+    testWidgets('TooManyFaces state shows default screen', (tester) async {
+      when(() => mockBloc.state)
+          .thenReturn(const FaceDetectionTooManyFaces(count: 3));
+      await tester.pumpWidget(buildSubject());
+
+      expect(
+        find.text('Too many faces detected. Screen is locked.'),
+        findsOneWidget,
+      );
+      expect(find.byIcon(Icons.groups_outlined), findsOneWidget);
+    });
+
+    testWidgets('TooManyFaces state shows custom screen when provided',
+        (tester) async {
+      when(() => mockBloc.state)
+          .thenReturn(const FaceDetectionTooManyFaces(count: 3));
+      await tester.pumpWidget(buildSubject(
+        tooManyFacesScreen: const Text('CUSTOM TOO MANY'),
+      ));
+
+      expect(find.text('CUSTOM TOO MANY'), findsOneWidget);
     });
 
     // -- State transitions ----------------------------------------------------

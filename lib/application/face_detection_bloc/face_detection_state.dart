@@ -62,3 +62,11 @@ final class FaceDetectionUnverified extends FaceDetectionState {
   /// Similarity score from the best match attempt (0.0–1.0).
   final double confidence;
 }
+
+/// More faces than allowed were detected. The screen is locked.
+final class FaceDetectionTooManyFaces extends FaceDetectionState {
+  const FaceDetectionTooManyFaces({required this.count});
+
+  /// Number of faces detected in the current frame.
+  final int count;
+}

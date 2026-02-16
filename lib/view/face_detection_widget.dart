@@ -1,5 +1,6 @@
 import 'package:camera/camera.dart';
 import 'package:face_detection_lock/application/face_detection_bloc/face_detection_bloc.dart';
+import 'package:face_detection_lock/domain/face_template.dart';
 import 'package:face_detection_lock/domain/face_verification_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -31,9 +32,12 @@ class FaceDetectionLock extends StatelessWidget {
     this.pausedScreen,
     this.errorScreen,
     this.unverifiedScreen,
+    this.tooManyFacesScreen,
     this.isBlocInitializeAbove = false,
     this.cameraController,
     this.verificationProvider,
+    this.maxFaces,
+    this.multiFacePolicy = MultiFacePolicy.lockIfMultiple,
     this.transitionDuration = const Duration(milliseconds: 300),
     this.enableHapticFeedback = false,
   });
@@ -65,6 +69,9 @@ class FaceDetectionLock extends StatelessWidget {
   /// Custom screen shown when a face is detected but not verified.
   final Widget? unverifiedScreen;
 
+  /// Custom screen shown when more faces than [maxFaces] are detected.
+  final Widget? tooManyFacesScreen;
+
   /// Pass an existing [CameraController] if you manage the camera elsewhere.
   final CameraController? cameraController;
 
@@ -78,6 +85,15 @@ class FaceDetectionLock extends StatelessWidget {
   /// the BLoC internally). When managing the BLoC yourself, pass the
   /// provider directly to [FaceDetectionBloc].
   final FaceVerificationProvider? verificationProvider;
+
+  /// Maximum number of faces allowed before locking.
+  /// When `null` (default), any number of faces is accepted.
+  /// Only used when [isBlocInitializeAbove] is false.
+  final int? maxFaces;
+
+  /// Policy for handling multiple detected faces.
+  /// Only used when [isBlocInitializeAbove] is false.
+  final MultiFacePolicy multiFacePolicy;
 
   /// Duration of the fade transition between lock/unlock states.
   final Duration transitionDuration;
@@ -99,6 +115,7 @@ class FaceDetectionLock extends StatelessWidget {
         pausedScreen: pausedScreen,
         errorScreen: errorScreen,
         unverifiedScreen: unverifiedScreen,
+        tooManyFacesScreen: tooManyFacesScreen,
         transitionDuration: transitionDuration,
         enableHapticFeedback: enableHapticFeedback,
       );
@@ -106,6 +123,8 @@ class FaceDetectionLock extends StatelessWidget {
     _faceDetectionBloc = FaceDetectionBloc(
       cameraController: cameraController,
       verificationProvider: verificationProvider,
+      maxFaces: maxFaces,
+      multiFacePolicy: multiFacePolicy,
     )..add(const InitializeCam());
     return BlocProvider.value(
       value: _faceDetectionBloc!,
@@ -118,6 +137,7 @@ class FaceDetectionLock extends StatelessWidget {
         pausedScreen: pausedScreen,
         errorScreen: errorScreen,
         unverifiedScreen: unverifiedScreen,
+        tooManyFacesScreen: tooManyFacesScreen,
         transitionDuration: transitionDuration,
         enableHapticFeedback: enableHapticFeedback,
       ),
@@ -137,6 +157,7 @@ class _LifecycleAwareBody extends StatefulWidget {
     this.pausedScreen,
     this.errorScreen,
     this.unverifiedScreen,
+    this.tooManyFacesScreen,
     required this.transitionDuration,
     required this.enableHapticFeedback,
   });
@@ -149,6 +170,7 @@ class _LifecycleAwareBody extends StatefulWidget {
   final Widget? pausedScreen;
   final Widget Function(String message)? errorScreen;
   final Widget? unverifiedScreen;
+  final Widget? tooManyFacesScreen;
   final Duration transitionDuration;
   final bool enableHapticFeedback;
 
@@ -193,7 +215,8 @@ class _LifecycleAwareBodyState extends State<_LifecycleAwareBody>
         if (state is FaceDetectionSuccess) {
           HapticFeedback.lightImpact();
         } else if (state is FaceDetectionNoFace ||
-            state is FaceDetectionUnverified) {
+            state is FaceDetectionUnverified ||
+            state is FaceDetectionTooManyFaces) {
           HapticFeedback.mediumImpact();
         }
       },
@@ -212,11 +235,13 @@ class _LifecycleAwareBodyState extends State<_LifecycleAwareBody>
 
   bool _isLockTransition(FaceDetectionState prev, FaceDetectionState curr) {
     final wasLocked = prev is FaceDetectionNoFace ||
-        prev is FaceDetectionUnverified;
+        prev is FaceDetectionUnverified ||
+        prev is FaceDetectionTooManyFaces;
     final isUnlocked = curr is FaceDetectionSuccess;
     final wasUnlocked = prev is FaceDetectionSuccess;
     final isLocked = curr is FaceDetectionNoFace ||
-        curr is FaceDetectionUnverified;
+        curr is FaceDetectionUnverified ||
+        curr is FaceDetectionTooManyFaces;
     return (wasLocked && isUnlocked) || (wasUnlocked && isLocked);
   }
 
@@ -234,38 +259,38 @@ class _LifecycleAwareBodyState extends State<_LifecycleAwareBody>
               ),
         ),
       FaceDetectionSuccess() => widget.body,
-      FaceDetectionNoFace() =>
-        widget.noFaceLockScreen ??
-            const _DefaultStatusScreen(
-              message: 'No face detected. Screen is locked.',
-              icon: Icons.lock_outline,
-            ),
-      FaceDetectionPaused() =>
-        widget.pausedScreen ??
-            widget.noFaceLockScreen ??
-            const _DefaultStatusScreen(
-              message: 'Detection paused.',
-              icon: Icons.pause_circle_outline,
-            ),
-      FaceDetectionNoCameraOnDevice() =>
-        widget.noCameraDetectedErrorScreen ??
-            const _DefaultStatusScreen(
-              message: 'No camera detected on device',
-              icon: Icons.no_photography_outlined,
-            ),
-      FaceDetectionPermissionDenied() =>
-        widget.permissionDeniedScreen ??
-            const _DefaultStatusScreen(
-              message: 'Camera permission denied.\n'
-                  'Please grant camera access in Settings.',
-              icon: Icons.camera_alt_outlined,
-            ),
-      FaceDetectionUnverified() =>
-        widget.unverifiedScreen ??
-            const _DefaultStatusScreen(
-              message: 'Face not recognized. Screen is locked.',
-              icon: Icons.person_off_outlined,
-            ),
+      FaceDetectionNoFace() => widget.noFaceLockScreen ??
+          const _DefaultStatusScreen(
+            message: 'No face detected. Screen is locked.',
+            icon: Icons.lock_outline,
+          ),
+      FaceDetectionPaused() => widget.pausedScreen ??
+          widget.noFaceLockScreen ??
+          const _DefaultStatusScreen(
+            message: 'Detection paused.',
+            icon: Icons.pause_circle_outline,
+          ),
+      FaceDetectionNoCameraOnDevice() => widget.noCameraDetectedErrorScreen ??
+          const _DefaultStatusScreen(
+            message: 'No camera detected on device',
+            icon: Icons.no_photography_outlined,
+          ),
+      FaceDetectionPermissionDenied() => widget.permissionDeniedScreen ??
+          const _DefaultStatusScreen(
+            message: 'Camera permission denied.\n'
+                'Please grant camera access in Settings.',
+            icon: Icons.camera_alt_outlined,
+          ),
+      FaceDetectionUnverified() => widget.unverifiedScreen ??
+          const _DefaultStatusScreen(
+            message: 'Face not recognized. Screen is locked.',
+            icon: Icons.person_off_outlined,
+          ),
+      FaceDetectionTooManyFaces() => widget.tooManyFacesScreen ??
+          const _DefaultStatusScreen(
+            message: 'Too many faces detected. Screen is locked.',
+            icon: Icons.groups_outlined,
+          ),
       FaceDetectionInitializationFailed(message: final msg) =>
         widget.errorScreen?.call(msg) ??
             _DefaultStatusScreen(

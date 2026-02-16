@@ -59,8 +59,7 @@ void main() {
       expect(find.byType(FaceBoundingBoxOverlay), findsOneWidget);
     });
 
-    test('default parameter values are green, 2.0, no labels, mirror=true',
-        () {
+    test('default parameter values are green, 2.0, no labels, mirror=true', () {
       const overlay = FaceBoundingBoxOverlay(
         faces: [],
         imageSize: Size(480, 640),

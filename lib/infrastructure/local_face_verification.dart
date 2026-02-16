@@ -87,7 +87,8 @@ class LocalFaceVerificationProvider implements FaceVerificationProvider {
   @override
   Future<FaceTemplate> enroll(String label, List<Face> samples) async {
     if (samples.isEmpty) {
-      throw ArgumentError('At least one face sample is required for enrollment');
+      throw ArgumentError(
+          'At least one face sample is required for enrollment');
     }
 
     final featureVectors = <List<double>>[];

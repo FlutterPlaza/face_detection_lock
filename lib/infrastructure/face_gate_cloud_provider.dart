@@ -92,7 +92,8 @@ class FaceGateCloudProvider implements FaceVerificationProvider {
   @override
   Future<FaceTemplate> enroll(String label, List<Face> samples) async {
     if (samples.isEmpty) {
-      throw ArgumentError('At least one face sample is required for enrollment');
+      throw ArgumentError(
+          'At least one face sample is required for enrollment');
     }
 
     final featureVectors = <List<double>>[];
@@ -207,18 +208,16 @@ class FaceGateCloudProvider implements FaceVerificationProvider {
 
   Future<Map<String, dynamic>> _get(String path) async {
     return _withRetry(() async {
-      final response = await _client
-          .get(_uri(path), headers: _headers)
-          .timeout(timeout);
+      final response =
+          await _client.get(_uri(path), headers: _headers).timeout(timeout);
       return _handleResponse(response);
     });
   }
 
   Future<void> _delete(String path) async {
     await _withRetry(() async {
-      final response = await _client
-          .delete(_uri(path), headers: _headers)
-          .timeout(timeout);
+      final response =
+          await _client.delete(_uri(path), headers: _headers).timeout(timeout);
       if (response.statusCode >= 200 && response.statusCode < 300) {
         return <String, dynamic>{};
       }
