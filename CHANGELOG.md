@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.3.0
+
+### Changed
+- **Removed `flutter_bloc` dependency** — replaced `FaceDetectionBloc` with
+  `FaceDetectionController` (extends `ChangeNotifier`). No external state
+  management dependency required.
+- **Removed `bloc_test` dev dependency** — tests now use standard `test()` with
+  stream collection instead of `blocTest<>`.
+- **Removed event pattern** — replaced `add(Event)` dispatch with direct
+  methods: `initializeCamera()`, `pause()`, `resume()`, `close()`.
+- **Renamed `FaceDetectionBlocProvider`** → `FaceDetectionProvider` — a
+  lightweight `InheritedWidget` for dependency injection.
+- **Renamed `isBlocInitializeAbove`** → `isControllerProvidedAbove`.
+- **Widget internals** — `BlocConsumer` replaced with `ListenableBuilder`.
+- State file is now a standalone import (no longer a `part` file).
+
+### Migration (from 0.2.x)
+- Replace `FaceDetectionBloc` with `FaceDetectionController`.
+- Replace `FaceDetectionBlocProvider(bloc: ...)` with
+  `FaceDetectionProvider(controller: ...)`.
+- Replace `bloc.add(const InitializeCam())` with `controller.initializeCamera()`.
+- Replace `bloc.add(const PauseDetection())` with `controller.pause()`.
+- Replace `bloc.add(const ResumeDetection())` with `controller.resume()`.
+- Replace `isBlocInitializeAbove` with `isControllerProvidedAbove`.
+- Remove `flutter_bloc` from your app's `pubspec.yaml`.
+
 ## 0.2.0
 
 ### Added
@@ -34,10 +60,10 @@ All notable changes to this project will be documented in this file.
 - **Haptic feedback** — optional `enableHapticFeedback` on state transitions.
 - **Lifecycle awareness** — automatically pauses detection when the app is
   backgrounded and resumes on foreground.
-- **`PauseDetection`** / **`ResumeDetection`** events and `FaceDetectionPaused`
-  state with previous-state restoration.
+- **Pause / Resume** methods and `FaceDetectionPaused` state with
+  previous-state restoration.
 - Configurable `camDirection`, `resolution`, and `minFaceSize` parameters.
-- BLoC unit tests (15 test cases) and widget tests (17 test cases).
+- Unit tests (15 test cases) and widget tests (17 test cases).
 - GitHub Actions CI pipeline (`flutter analyze` + `flutter test`).
 - Example app with three demo modes: Basic, Verification, and Advanced.
 - Comprehensive dartdoc comments on all public APIs.
@@ -61,8 +87,6 @@ All notable changes to this project will be documented in this file.
 ### Dependencies
 - `google_mlkit_face_detection: ^0.12.0` (replaces `google_ml_vision`)
 - `http: ^1.2.0`
-- `bloc_test: ^9.1.0` (dev)
-- `mocktail: ^1.0.0` (dev)
 
 ## 0.0.1
 

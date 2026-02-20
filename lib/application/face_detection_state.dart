@@ -1,5 +1,3 @@
-part of 'face_detection_bloc.dart';
-
 /// Base class for all face detection states.
 ///
 /// Use pattern matching to handle each state in your UI:

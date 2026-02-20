@@ -1,6 +1,5 @@
 import 'package:face_detection_lock/face_detection_lock.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 
 void main() => runApp(const MyApp());
 
@@ -9,8 +8,8 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (context) => FaceDetectionBloc()..add(const InitializeCam()),
+    return FaceDetectionProvider(
+      controller: FaceDetectionController()..initializeCamera(),
       child: MaterialApp(
         title: 'Material App',
         home: Scaffold(

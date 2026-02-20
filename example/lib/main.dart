@@ -3,7 +3,6 @@ import 'dart:developer';
 import 'package:face_detection_lock/face_detection_lock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -130,7 +129,7 @@ class _VerificationDemo extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// 3. Advanced — BLoC managed above, with fallback provider
+// 3. Advanced — controller managed above, with fallback provider
 // ---------------------------------------------------------------------------
 
 class _AdvancedDemo extends StatelessWidget {
@@ -138,8 +137,8 @@ class _AdvancedDemo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) => FaceDetectionBloc(
+    return FaceDetectionProvider(
+      controller: FaceDetectionController(
         onFaceSnapshot: (faces) {
           log('Detected ${faces.length} face(s)');
         },
@@ -156,9 +155,9 @@ class _AdvancedDemo extends StatelessWidget {
         //   ),
         //   fallback: LocalFaceVerificationProvider(),
         // ),
-      )..add(const InitializeCam()),
+      )..initializeCamera(),
       child: const FaceDetectionLock(
-        isBlocInitializeAbove: true,
+        isControllerProvidedAbove: true,
         body: _UnlockedContent(title: 'Advanced Mode'),
         transitionDuration: Duration(milliseconds: 400),
         enableHapticFeedback: true,

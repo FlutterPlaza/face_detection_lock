@@ -3,28 +3,27 @@ import 'dart:async';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
-import '../../core/utils.dart';
-import '../../domain/face_template.dart';
-import '../../domain/face_verification_provider.dart';
+import '../core/utils.dart';
+import '../domain/face_template.dart';
+import '../domain/face_verification_provider.dart';
+import 'face_detection_state.dart';
 
-part 'face_detection_event.dart';
-part 'face_detection_state.dart';
+export 'face_detection_state.dart';
 
-/// BLoC that manages camera initialization, face detection, and optional
+/// Controller that manages camera initialization, face detection, and optional
 /// face verification.
 ///
 /// ```dart
 /// // Basic usage — any face unlocks
-/// final bloc = FaceDetectionBloc()..add(const InitializeCam());
+/// final controller = FaceDetectionController()..initializeCamera();
 ///
 /// // With verification — only enrolled faces unlock
-/// final bloc = FaceDetectionBloc(
+/// final controller = FaceDetectionController(
 ///   verificationProvider: LocalFaceVerificationProvider(),
-/// )..add(const InitializeCam());
+/// )..initializeCamera();
 /// ```
-class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
+class FaceDetectionController extends ChangeNotifier {
   /// Use an existing camera controller for fine-grained camera control.
   final CameraController? cameraController;
 
@@ -102,7 +101,18 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
   int? _cachedBatteryLevel;
   DateTime _lastBatteryCheck = DateTime.fromMillisecondsSinceEpoch(0);
 
-  FaceDetectionBloc({
+  // State + stream.
+  FaceDetectionState _state = const FaceDetectionInitial();
+  final StreamController<FaceDetectionState> _streamController =
+      StreamController<FaceDetectionState>.broadcast();
+
+  /// The current state of face detection.
+  FaceDetectionState get state => _state;
+
+  /// A broadcast stream of state changes.
+  Stream<FaceDetectionState> get stream => _streamController.stream;
+
+  FaceDetectionController({
     this.onFaceSnapshot,
     this.cameraController,
     this.camDirection = CameraLensDirection.front,
@@ -120,67 +130,90 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
     this.batteryThreshold = 20,
     this.lowBatteryDetectionInterval = const Duration(milliseconds: 1000),
     Battery? battery,
-  })  : _battery = battery ?? Battery(),
-        super(const FaceDetectionInitial()) {
-    on<InitializeCam>(_onInitializeCam);
-    on<FaceDetected>(_onFaceDetected);
-    on<NoFaceDetected>(_onNoFace);
-    on<PauseDetection>(_onPause);
-    on<ResumeDetection>(_onResume);
-    on<_DebouncedLock>((_, emit) => emit(const FaceDetectionNoFace()));
-    on<_DebouncedUnlock>((_, emit) => emit(const FaceDetectionSuccess()));
-    on<_FaceUnverified>(_onFaceUnverified);
-    on<_TooManyFaces>(_onTooManyFaces);
+  }) : _battery = battery ?? Battery();
+
+  // -- State emission ---------------------------------------------------------
+
+  void _emit(FaceDetectionState newState) {
+    if (_isClosed) return;
+    _state = newState;
+    _streamController.add(newState);
+    notifyListeners();
   }
 
-  // -- Event handlers --------------------------------------------------------
+  // -- Public methods ---------------------------------------------------------
 
-  void _onFaceDetected(FaceDetected event, Emitter<FaceDetectionState> emit) {
+  /// Initialize the camera and start the face detection image stream.
+  void initializeCamera() {
+    if (_isClosed) return;
+    _onInitializeCam();
+  }
+
+  /// Pause face detection (e.g. when the app is backgrounded).
+  void pause() {
+    if (_isClosed) return;
+    _onPause();
+  }
+
+  /// Resume face detection after a pause.
+  void resume() {
+    if (_isClosed) return;
+    _onResume();
+  }
+
+  /// Simulate a face being detected. Only for use in tests.
+  @visibleForTesting
+  void simulateFaceDetected() => _onFaceDetected();
+
+  /// Simulate no face being detected. Only for use in tests.
+  @visibleForTesting
+  void simulateNoFace() => _onNoFace();
+
+  // -- Internal handlers ------------------------------------------------------
+
+  void _onFaceDetected() {
     // Cancel any pending lock timer — face reappeared.
     _lockTimer?.cancel();
 
     if (state is FaceDetectionSuccess) return;
 
     if (unlockDelay == Duration.zero) {
-      emit(const FaceDetectionSuccess());
+      _emit(const FaceDetectionSuccess());
     } else {
       _unlockTimer?.cancel();
       _unlockTimer = Timer(unlockDelay, () {
         if (!_isClosed && state is! FaceDetectionSuccess) {
-          add(const _DebouncedUnlock());
+          _emit(const FaceDetectionSuccess());
         }
       });
     }
   }
 
-  void _onNoFace(NoFaceDetected event, Emitter<FaceDetectionState> emit) {
+  void _onNoFace() {
     // Cancel any pending unlock timer — face disappeared.
     _unlockTimer?.cancel();
 
     if (state is FaceDetectionNoFace) return;
     if (state is! FaceDetectionSuccess) {
       // First detection cycle with no face — emit immediately.
-      emit(const FaceDetectionNoFace());
+      _emit(const FaceDetectionNoFace());
       return;
     }
 
     // Currently unlocked — apply lock delay.
     if (lockDelay == Duration.zero) {
-      emit(const FaceDetectionNoFace());
+      _emit(const FaceDetectionNoFace());
     } else {
       _lockTimer?.cancel();
       _lockTimer = Timer(lockDelay, () {
         if (!_isClosed && state is FaceDetectionSuccess) {
-          add(const _DebouncedLock());
+          _emit(const FaceDetectionNoFace());
         }
       });
     }
   }
 
-  Future<void> _onPause(
-    PauseDetection event,
-    Emitter<FaceDetectionState> emit,
-  ) async {
+  Future<void> _onPause() async {
     if (_isPaused) return;
     _isPaused = true;
     _lockTimer?.cancel();
@@ -190,19 +223,16 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
     if (_cameraController?.value.isStreamingImages ?? false) {
       await _cameraController?.stopImageStream();
     }
-    emit(const FaceDetectionPaused());
+    _emit(const FaceDetectionPaused());
   }
 
-  Future<void> _onResume(
-    ResumeDetection event,
-    Emitter<FaceDetectionState> emit,
-  ) async {
+  Future<void> _onResume() async {
     if (!_isPaused) return;
     _isPaused = false;
 
     // Restore previous state while camera restarts detection.
     if (_stateBeforePause != null) {
-      emit(_stateBeforePause!);
+      _emit(_stateBeforePause!);
       _stateBeforePause = null;
     }
 
@@ -211,14 +241,11 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
     }
   }
 
-  Future<void> _onInitializeCam(
-    InitializeCam event,
-    Emitter<FaceDetectionState> emit,
-  ) async {
+  Future<void> _onInitializeCam() async {
     try {
       _description = await getCamera(camDirection);
       if (_description == null) {
-        emit(const FaceDetectionNoCameraOnDevice());
+        _emit(const FaceDetectionNoCameraOnDevice());
         return;
       }
 
@@ -257,16 +284,16 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
       if (e.code == 'CameraAccessDenied' ||
           e.code == 'CameraAccessDeniedWithoutPrompt' ||
           e.code == 'CameraAccessRestricted') {
-        emit(const FaceDetectionPermissionDenied());
+        _emit(const FaceDetectionPermissionDenied());
       } else {
-        emit(FaceDetectionInitializationFailed(e.description ?? e.code));
+        _emit(FaceDetectionInitializationFailed(e.description ?? e.code));
       }
     } on TimeoutException {
-      emit(const FaceDetectionInitializationFailed(
+      _emit(const FaceDetectionInitializationFailed(
         'Camera initialization timed out',
       ));
     } catch (e) {
-      emit(FaceDetectionInitializationFailed(e.toString()));
+      _emit(FaceDetectionInitializationFailed(e.toString()));
     }
   }
 
@@ -328,7 +355,7 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
         // Multi-face policy check.
         if (maxFaces != null && faces.length > maxFaces!) {
           if (multiFacePolicy == MultiFacePolicy.lockIfMultiple) {
-            add(_TooManyFaces(count: faces.length));
+            _onTooManyFaces(faces.length);
             return;
           }
           // unlockIfAnyMatch / unlockIfAllMatch proceed to verification.
@@ -337,10 +364,10 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
         if (verificationProvider != null) {
           await _verifyFaces(faces);
         } else {
-          add(const FaceDetected());
+          _onFaceDetected();
         }
       } else {
-        add(const NoFaceDetected());
+        _onNoFace();
       }
     } catch (e) {
       if (kDebugMode) {
@@ -376,7 +403,7 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
     if (enableLiveness) {
       final liveness = await verificationProvider!.checkLiveness(face);
       if (!liveness.isLive) {
-        add(const NoFaceDetected());
+        _onNoFace();
         return;
       }
     }
@@ -385,9 +412,9 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
     if (_isClosed) return;
 
     if (result.isMatch) {
-      add(const FaceDetected());
+      _onFaceDetected();
     } else {
-      add(_FaceUnverified(confidence: result.confidence));
+      _onFaceUnverified(result.confidence);
     }
   }
 
@@ -401,7 +428,7 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
       if (enableLiveness) {
         final liveness = await verificationProvider!.checkLiveness(face);
         if (!liveness.isLive) {
-          add(const NoFaceDetected());
+          _onNoFace();
           return;
         }
       }
@@ -410,7 +437,7 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
       if (_isClosed) return;
 
       if (!result.isMatch) {
-        add(_FaceUnverified(confidence: result.confidence));
+        _onFaceUnverified(result.confidence);
         return;
       }
 
@@ -420,31 +447,25 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
     }
 
     // All faces matched.
-    add(const FaceDetected());
+    _onFaceDetected();
   }
 
-  void _onFaceUnverified(
-    _FaceUnverified event,
-    Emitter<FaceDetectionState> emit,
-  ) {
+  void _onFaceUnverified(double confidence) {
     // Cancel any pending unlock/lock timers — wrong face is present.
     _unlockTimer?.cancel();
     _lockTimer?.cancel();
-    emit(FaceDetectionUnverified(confidence: event.confidence));
+    _emit(FaceDetectionUnverified(confidence: confidence));
   }
 
-  void _onTooManyFaces(
-    _TooManyFaces event,
-    Emitter<FaceDetectionState> emit,
-  ) {
+  void _onTooManyFaces(int count) {
     _unlockTimer?.cancel();
     _lockTimer?.cancel();
-    emit(FaceDetectionTooManyFaces(count: event.count));
+    _emit(FaceDetectionTooManyFaces(count: count));
   }
 
   // -- Cleanup ---------------------------------------------------------------
 
-  @override
+  /// Release all resources — camera, detector, stream, listeners.
   Future<void> close() async {
     _isClosed = true;
     _lockTimer?.cancel();
@@ -461,26 +482,7 @@ class FaceDetectionBloc extends Bloc<FaceDetectionEvent, FaceDetectionState> {
 
     await _faceDetector?.close();
 
-    return super.close();
+    await _streamController.close();
+    dispose();
   }
-}
-
-// -- Internal debounce events (not part of the public API) -------------------
-
-final class _DebouncedLock extends FaceDetectionEvent {
-  const _DebouncedLock();
-}
-
-final class _DebouncedUnlock extends FaceDetectionEvent {
-  const _DebouncedUnlock();
-}
-
-final class _FaceUnverified extends FaceDetectionEvent {
-  const _FaceUnverified({this.confidence = 0.0});
-  final double confidence;
-}
-
-final class _TooManyFaces extends FaceDetectionEvent {
-  const _TooManyFaces({required this.count});
-  final int count;
 }

@@ -2,8 +2,8 @@
 
 > **Goal:** Transform `face_detection_lock` from a basic face-presence widget into a production-grade, standalone face detection & verification package that is fast, battery-efficient, and can optionally connect to `face_gate_cloud` or any backend provider.
 
-**Current version:** v0.2.0
-**Tests:** 92 passing
+**Current version:** v0.3.0
+**Tests:** 106 passing
 **Platforms:** Android, iOS
 
 ---
@@ -36,7 +36,7 @@
 - [x] Sensitivity & confidence threshold configuration (F11)
 - [x] Lifecycle-aware detection — pause/resume on app lifecycle (F13)
 - [x] Lock/unlock animations (AnimatedSwitcher) & haptic feedback (F14)
-- [x] Comprehensive test suite — 92 tests (BLoC, widget, unit) (F15)
+- [x] Comprehensive test suite — 106 tests (controller, widget, unit, integration) (F15)
 - [x] Multi-face policy — `lockIfMultiple` / `unlockIfAnyMatch` / `unlockIfAllMatch` (F17)
 - [x] `FallbackVerificationProvider` — primary + fallback chain
 - [x] `FaceDetectionLock` widget — 9 states, all customizable
@@ -51,6 +51,7 @@
 - [x] Integration tests — full flow, verification, multi-face, pause/resume (5.4)
 - [x] Security audit — sanitized error messages, guarded debug prints, PII docs (5.7)
 - [x] Privacy documentation — `PRIVACY.md` with GDPR/CCPA notes (5.8)
+- [x] Zero external state management — `ChangeNotifier` + `InheritedWidget` + `ListenableBuilder` (F21)
 
 ---
 
@@ -117,7 +118,7 @@ face_gate's age API if needed.
 └──────────────┬───────────────────────────────────┘
                │
 ┌──────────────▼───────────────────────────────────┐
-│           FaceDetectionBloc                       │
+│         FaceDetectionController                   │
 │  States: Initial | Success | NoFace | Paused |    │
 │    NoCameraOnDevice | PermissionDenied |          │
 │    InitializationFailed | Unverified |            │
@@ -160,9 +161,10 @@ face_gate's age API if needed.
 ### Widget
 - `FaceDetectionLock` — 14 parameters, all documented
 
-### BLoC
-- `FaceDetectionBloc` — 13 parameters
-- 5 public events: `InitializeCam`, `FaceDetected`, `NoFaceDetected`, `PauseDetection`, `ResumeDetection`
+### Controller
+- `FaceDetectionController` (extends `ChangeNotifier`) — 13 parameters
+- `FaceDetectionProvider` — `InheritedWidget` for dependency injection
+- 3 public methods: `initializeCamera()`, `pause()`, `resume()`
 - 9 public states: `Initial`, `Success`, `NoFace`, `Paused`, `NoCameraOnDevice`, `PermissionDenied`, `InitializationFailed`, `Unverified`, `TooManyFaces`
 
 ### Domain
@@ -188,3 +190,4 @@ face_gate's age API if needed.
 4. **No Firebase dependency** — `google_mlkit_face_detection` needs no Firebase config.
 5. **Battery and privacy first** — Frame throttling, lifecycle awareness, configurable intervals.
 6. **Part of FlutterPlaza Security Suite** — Complements `no_screenshot`, `no_screen_mirror`, `no_shoulder_surf`.
+7. **Zero external state management** — Uses Flutter SDK primitives (`ChangeNotifier`, `InheritedWidget`, `ListenableBuilder`). Users are free to use any state management solution.

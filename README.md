@@ -75,20 +75,20 @@ FaceDetectionLock(
 );
 ```
 
-### Advanced — external BLoC with face snapshot callback
+### Advanced — external controller with face snapshot callback
 
 ```dart
 MaterialApp(
-  home: BlocProvider(
-    create: (_) => FaceDetectionBloc(
+  home: FaceDetectionProvider(
+    controller: FaceDetectionController(
       cameraController: controller,
       onFaceSnapshot: (faces) => print('${faces.length} faces'),
       verificationProvider: provider,
       maxFaces: 1,
       batteryAwareMode: true,
-    )..add(const InitializeCam()),
+    )..initializeCamera(),
     child: FaceDetectionLock(
-      isBlocInitializeAbove: true,
+      isControllerProvidedAbove: true,
       body: SecurePage(),
     ),
   ),

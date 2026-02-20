@@ -19,11 +19,11 @@ void main() {
   group('FaceDetectionLock', () {
     test('can be instantiated with defaults', () {
       const widget = FaceDetectionLock(
-        isBlocInitializeAbove: true,
+        isControllerProvidedAbove: true,
         body: Text('Hello World'),
       );
       expect(widget, isNotNull);
-      expect(widget.isBlocInitializeAbove, isTrue);
+      expect(widget.isControllerProvidedAbove, isTrue);
       expect(widget.enableHapticFeedback, isFalse);
       expect(widget.transitionDuration, const Duration(milliseconds: 300));
       expect(widget.unverifiedScreen, isNull);
@@ -77,96 +77,96 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
-  // BLoC tests
+  // Controller tests
   // ---------------------------------------------------------------------------
-  group('FaceDetectionBloc', () {
+  group('FaceDetectionController', () {
     test('can be instantiated with defaults', () {
-      final bloc = FaceDetectionBloc();
-      expect(bloc.state, isA<FaceDetectionInitial>());
-      expect(bloc.detectionInterval, const Duration(milliseconds: 300));
-      expect(bloc.lockDelay, const Duration(milliseconds: 500));
-      expect(bloc.unlockDelay, Duration.zero);
-      expect(bloc.minFaceSize, 0.15);
-      expect(bloc.resolution, ResolutionPreset.low);
-      expect(bloc.verificationProvider, isNull);
-      expect(bloc.enableLiveness, isTrue);
-      bloc.close();
+      final controller = FaceDetectionController();
+      expect(controller.state, isA<FaceDetectionInitial>());
+      expect(controller.detectionInterval, const Duration(milliseconds: 300));
+      expect(controller.lockDelay, const Duration(milliseconds: 500));
+      expect(controller.unlockDelay, Duration.zero);
+      expect(controller.minFaceSize, 0.15);
+      expect(controller.resolution, ResolutionPreset.low);
+      expect(controller.verificationProvider, isNull);
+      expect(controller.enableLiveness, isTrue);
+      controller.close();
     });
 
     test('can be instantiated with custom performance settings', () {
-      final bloc = FaceDetectionBloc(
+      final controller = FaceDetectionController(
         detectionInterval: const Duration(milliseconds: 100),
         lockDelay: const Duration(seconds: 2),
         unlockDelay: const Duration(milliseconds: 200),
         minFaceSize: 0.3,
         resolution: ResolutionPreset.medium,
       );
-      expect(bloc.detectionInterval, const Duration(milliseconds: 100));
-      expect(bloc.lockDelay, const Duration(seconds: 2));
-      expect(bloc.unlockDelay, const Duration(milliseconds: 200));
-      expect(bloc.minFaceSize, 0.3);
-      expect(bloc.resolution, ResolutionPreset.medium);
-      bloc.close();
+      expect(controller.detectionInterval, const Duration(milliseconds: 100));
+      expect(controller.lockDelay, const Duration(seconds: 2));
+      expect(controller.unlockDelay, const Duration(milliseconds: 200));
+      expect(controller.minFaceSize, 0.3);
+      expect(controller.resolution, ResolutionPreset.medium);
+      controller.close();
     });
 
     test('initial state is FaceDetectionInitial', () {
-      final bloc = FaceDetectionBloc();
-      expect(bloc.state, isA<FaceDetectionInitial>());
-      bloc.close();
+      final controller = FaceDetectionController();
+      expect(controller.state, isA<FaceDetectionInitial>());
+      controller.close();
     });
 
     test('accepts verificationProvider parameter', () {
       final provider = LocalFaceVerificationProvider();
-      final bloc = FaceDetectionBloc(
+      final controller = FaceDetectionController(
         verificationProvider: provider,
         enableLiveness: false,
       );
-      expect(bloc.verificationProvider, same(provider));
-      expect(bloc.enableLiveness, isFalse);
-      bloc.close();
+      expect(controller.verificationProvider, same(provider));
+      expect(controller.enableLiveness, isFalse);
+      controller.close();
     });
 
     test('accepts maxFaces and multiFacePolicy parameters', () {
-      final bloc = FaceDetectionBloc(
+      final controller = FaceDetectionController(
         maxFaces: 1,
         multiFacePolicy: MultiFacePolicy.unlockIfAnyMatch,
       );
-      expect(bloc.maxFaces, 1);
-      expect(bloc.multiFacePolicy, MultiFacePolicy.unlockIfAnyMatch);
-      bloc.close();
+      expect(controller.maxFaces, 1);
+      expect(controller.multiFacePolicy, MultiFacePolicy.unlockIfAnyMatch);
+      controller.close();
     });
 
     test('maxFaces defaults to null and multiFacePolicy to lockIfMultiple', () {
-      final bloc = FaceDetectionBloc();
-      expect(bloc.maxFaces, isNull);
-      expect(bloc.multiFacePolicy, MultiFacePolicy.lockIfMultiple);
-      bloc.close();
+      final controller = FaceDetectionController();
+      expect(controller.maxFaces, isNull);
+      expect(controller.multiFacePolicy, MultiFacePolicy.lockIfMultiple);
+      controller.close();
     });
 
     test('accepts battery-aware parameters', () {
-      final bloc = FaceDetectionBloc(
+      final controller = FaceDetectionController(
         batteryAwareMode: true,
         batteryThreshold: 30,
         lowBatteryDetectionInterval: const Duration(milliseconds: 2000),
       );
-      expect(bloc.batteryAwareMode, isTrue);
-      expect(bloc.batteryThreshold, 30);
+      expect(controller.batteryAwareMode, isTrue);
+      expect(controller.batteryThreshold, 30);
       expect(
-        bloc.lowBatteryDetectionInterval,
+        controller.lowBatteryDetectionInterval,
         const Duration(milliseconds: 2000),
       );
-      bloc.close();
+      controller.close();
     });
 
     test('battery-aware defaults are off with threshold 20 and 1000ms', () {
-      final bloc = FaceDetectionBloc();
-      expect(bloc.batteryAwareMode, isFalse);
-      expect(bloc.batteryThreshold, 20);
+      final controller = FaceDetectionController();
+      expect(controller.batteryAwareMode, isFalse);
+      expect(controller.batteryThreshold, 20);
       expect(
-        bloc.lowBatteryDetectionInterval,
+        controller.lowBatteryDetectionInterval,
         const Duration(milliseconds: 1000),
       );
-      bloc.close();
+      controller.close();
     });
   });
 

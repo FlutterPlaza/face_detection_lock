@@ -1,24 +1,56 @@
-import 'package:bloc_test/bloc_test.dart';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
 
 import 'package:face_detection_lock/face_detection_lock.dart';
 
-class MockFaceDetectionBloc
-    extends MockBloc<FaceDetectionEvent, FaceDetectionState>
-    implements FaceDetectionBloc {}
+/// Hand-rolled mock that extends [ChangeNotifier] and provides a controllable
+/// [state] and [stream] for widget tests.
+class MockFaceDetectionController extends ChangeNotifier
+    implements FaceDetectionController {
+  FaceDetectionState _state = const FaceDetectionInitial();
+  final StreamController<FaceDetectionState> _streamController =
+      StreamController<FaceDetectionState>.broadcast();
+
+  @override
+  FaceDetectionState get state => _state;
+
+  @override
+  Stream<FaceDetectionState> get stream => _streamController.stream;
+
+  void setState(FaceDetectionState newState) {
+    _state = newState;
+    _streamController.add(newState);
+    notifyListeners();
+  }
+
+  void emitStates(List<FaceDetectionState> states) {
+    for (final s in states) {
+      setState(s);
+    }
+  }
+
+  @override
+  Future<void> close() async {
+    await _streamController.close();
+    dispose();
+  }
+
+  // Stubs for all remaining FaceDetectionController members.
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
 
 void main() {
-  late MockFaceDetectionBloc mockBloc;
+  late MockFaceDetectionController mockController;
 
   setUp(() {
-    mockBloc = MockFaceDetectionBloc();
+    mockController = MockFaceDetectionController();
   });
 
   tearDown(() {
-    mockBloc.close();
+    mockController.close();
   });
 
   Widget buildSubject({
@@ -32,10 +64,10 @@ void main() {
     Widget Function(String)? errorScreen,
   }) {
     return MaterialApp(
-      home: BlocProvider<FaceDetectionBloc>.value(
-        value: mockBloc,
+      home: FaceDetectionProvider(
+        controller: mockController,
         child: FaceDetectionLock(
-          isBlocInitializeAbove: true,
+          isControllerProvidedAbove: true,
           body: const Text('BODY'),
           noFaceLockScreen: noFaceLockScreen,
           noCameraDetectedErrorScreen: noCameraDetectedErrorScreen,
@@ -52,7 +84,7 @@ void main() {
 
   group('FaceDetectionLock widget states', () {
     testWidgets('Initial state shows loading indicator', (tester) async {
-      when(() => mockBloc.state).thenReturn(const FaceDetectionInitial());
+      mockController.setState(const FaceDetectionInitial());
       await tester.pumpWidget(buildSubject());
 
       expect(find.text('Initializing Camera...'), findsOneWidget);
@@ -61,7 +93,7 @@ void main() {
 
     testWidgets('Initial state shows custom screen when provided',
         (tester) async {
-      when(() => mockBloc.state).thenReturn(const FaceDetectionInitial());
+      mockController.setState(const FaceDetectionInitial());
       await tester.pumpWidget(buildSubject(
         initializingCameraScreen: const Text('CUSTOM LOADING'),
       ));
@@ -71,14 +103,14 @@ void main() {
     });
 
     testWidgets('Success state shows body', (tester) async {
-      when(() => mockBloc.state).thenReturn(const FaceDetectionSuccess());
+      mockController.setState(const FaceDetectionSuccess());
       await tester.pumpWidget(buildSubject());
 
       expect(find.text('BODY'), findsOneWidget);
     });
 
     testWidgets('NoFace state shows default lock screen', (tester) async {
-      when(() => mockBloc.state).thenReturn(const FaceDetectionNoFace());
+      mockController.setState(const FaceDetectionNoFace());
       await tester.pumpWidget(buildSubject());
 
       expect(
@@ -90,7 +122,7 @@ void main() {
 
     testWidgets('NoFace state shows custom screen when provided',
         (tester) async {
-      when(() => mockBloc.state).thenReturn(const FaceDetectionNoFace());
+      mockController.setState(const FaceDetectionNoFace());
       await tester.pumpWidget(buildSubject(
         noFaceLockScreen: const Text('CUSTOM LOCK'),
       ));
@@ -99,7 +131,7 @@ void main() {
     });
 
     testWidgets('Paused state shows default paused screen', (tester) async {
-      when(() => mockBloc.state).thenReturn(const FaceDetectionPaused());
+      mockController.setState(const FaceDetectionPaused());
       await tester.pumpWidget(buildSubject());
 
       expect(find.text('Detection paused.'), findsOneWidget);
@@ -108,7 +140,7 @@ void main() {
 
     testWidgets('Paused state shows custom screen when provided',
         (tester) async {
-      when(() => mockBloc.state).thenReturn(const FaceDetectionPaused());
+      mockController.setState(const FaceDetectionPaused());
       await tester.pumpWidget(buildSubject(
         pausedScreen: const Text('CUSTOM PAUSED'),
       ));
@@ -117,8 +149,7 @@ void main() {
     });
 
     testWidgets('NoCameraOnDevice state shows error', (tester) async {
-      when(() => mockBloc.state)
-          .thenReturn(const FaceDetectionNoCameraOnDevice());
+      mockController.setState(const FaceDetectionNoCameraOnDevice());
       await tester.pumpWidget(buildSubject());
 
       expect(find.text('No camera detected on device'), findsOneWidget);
@@ -127,8 +158,7 @@ void main() {
 
     testWidgets('NoCameraOnDevice state shows custom screen when provided',
         (tester) async {
-      when(() => mockBloc.state)
-          .thenReturn(const FaceDetectionNoCameraOnDevice());
+      mockController.setState(const FaceDetectionNoCameraOnDevice());
       await tester.pumpWidget(buildSubject(
         noCameraDetectedErrorScreen: const Text('NO CAM'),
       ));
@@ -138,8 +168,7 @@ void main() {
 
     testWidgets('PermissionDenied state shows permission screen',
         (tester) async {
-      when(() => mockBloc.state)
-          .thenReturn(const FaceDetectionPermissionDenied());
+      mockController.setState(const FaceDetectionPermissionDenied());
       await tester.pumpWidget(buildSubject());
 
       expect(find.textContaining('Camera permission denied'), findsOneWidget);
@@ -148,8 +177,7 @@ void main() {
 
     testWidgets('PermissionDenied state shows custom screen when provided',
         (tester) async {
-      when(() => mockBloc.state)
-          .thenReturn(const FaceDetectionPermissionDenied());
+      mockController.setState(const FaceDetectionPermissionDenied());
       await tester.pumpWidget(buildSubject(
         permissionDeniedScreen: const Text('CUSTOM PERM'),
       ));
@@ -159,8 +187,7 @@ void main() {
 
     testWidgets('Unverified state shows default unverified screen',
         (tester) async {
-      when(() => mockBloc.state)
-          .thenReturn(const FaceDetectionUnverified(confidence: 0.3));
+      mockController.setState(const FaceDetectionUnverified(confidence: 0.3));
       await tester.pumpWidget(buildSubject());
 
       expect(
@@ -172,8 +199,7 @@ void main() {
 
     testWidgets('Unverified state shows custom screen when provided',
         (tester) async {
-      when(() => mockBloc.state)
-          .thenReturn(const FaceDetectionUnverified(confidence: 0.3));
+      mockController.setState(const FaceDetectionUnverified(confidence: 0.3));
       await tester.pumpWidget(buildSubject(
         unverifiedScreen: const Text('CUSTOM UNVERIFIED'),
       ));
@@ -183,8 +209,7 @@ void main() {
 
     testWidgets('InitializationFailed state shows error with message',
         (tester) async {
-      when(() => mockBloc.state)
-          .thenReturn(const FaceDetectionInitializationFailed('Oops'));
+      mockController.setState(const FaceDetectionInitializationFailed('Oops'));
       await tester.pumpWidget(buildSubject());
 
       expect(find.textContaining('Oops'), findsOneWidget);
@@ -193,8 +218,7 @@ void main() {
 
     testWidgets('InitializationFailed state shows custom screen when provided',
         (tester) async {
-      when(() => mockBloc.state)
-          .thenReturn(const FaceDetectionInitializationFailed('Oops'));
+      mockController.setState(const FaceDetectionInitializationFailed('Oops'));
       await tester.pumpWidget(buildSubject(
         errorScreen: (msg) => Text('ERR: $msg'),
       ));
@@ -203,8 +227,7 @@ void main() {
     });
 
     testWidgets('TooManyFaces state shows default screen', (tester) async {
-      when(() => mockBloc.state)
-          .thenReturn(const FaceDetectionTooManyFaces(count: 3));
+      mockController.setState(const FaceDetectionTooManyFaces(count: 3));
       await tester.pumpWidget(buildSubject());
 
       expect(
@@ -216,8 +239,7 @@ void main() {
 
     testWidgets('TooManyFaces state shows custom screen when provided',
         (tester) async {
-      when(() => mockBloc.state)
-          .thenReturn(const FaceDetectionTooManyFaces(count: 3));
+      mockController.setState(const FaceDetectionTooManyFaces(count: 3));
       await tester.pumpWidget(buildSubject(
         tooManyFacesScreen: const Text('CUSTOM TOO MANY'),
       ));
@@ -229,15 +251,13 @@ void main() {
 
     testWidgets('transitions from NoFace to Success shows body',
         (tester) async {
-      whenListen(
-        mockBloc,
-        Stream.fromIterable([
-          const FaceDetectionNoFace(),
-          const FaceDetectionSuccess(),
-        ]),
-        initialState: const FaceDetectionInitial(),
-      );
+      mockController.setState(const FaceDetectionInitial());
       await tester.pumpWidget(buildSubject());
+
+      mockController.emitStates(const [
+        FaceDetectionNoFace(),
+        FaceDetectionSuccess(),
+      ]);
       await tester.pumpAndSettle();
 
       expect(find.text('BODY'), findsOneWidget);

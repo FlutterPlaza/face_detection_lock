@@ -25,8 +25,8 @@ import 'liveness_checker.dart';
 /// // Use standalone
 /// final result = await provider.verify(detectedFace);
 ///
-/// // Or inject into the lock widget via BLoC
-/// FaceDetectionBloc(verificationProvider: provider);
+/// // Or inject into the lock widget via the controller
+/// FaceDetectionController(verificationProvider: provider);
 /// ```
 ///
 /// ## Implementing a custom backend

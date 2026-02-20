@@ -17,7 +17,7 @@
 /// Supported platforms: Android, iOS.
 library face_detection_lock;
 
-export 'application/face_detection_bloc/face_detection_bloc.dart';
+export 'application/face_detection_controller.dart';
 export 'domain/face_template.dart';
 export 'domain/face_template_store.dart';
 export 'domain/face_verification_provider.dart';

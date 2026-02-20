@@ -1,10 +1,33 @@
 import 'package:camera/camera.dart';
-import 'package:face_detection_lock/application/face_detection_bloc/face_detection_bloc.dart';
+import 'package:face_detection_lock/application/face_detection_controller.dart';
 import 'package:face_detection_lock/domain/face_template.dart';
 import 'package:face_detection_lock/domain/face_verification_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
+
+/// Provides a [FaceDetectionController] to the widget tree via [InheritedWidget].
+class FaceDetectionProvider extends InheritedWidget {
+  const FaceDetectionProvider({
+    super.key,
+    required this.controller,
+    required super.child,
+  });
+
+  /// The [FaceDetectionController] instance available to descendants.
+  final FaceDetectionController controller;
+
+  /// Retrieve the nearest [FaceDetectionController] from the widget tree.
+  static FaceDetectionController of(BuildContext context) {
+    final provider =
+        context.dependOnInheritedWidgetOfExactType<FaceDetectionProvider>();
+    assert(provider != null, 'No FaceDetectionProvider found in context');
+    return provider!.controller;
+  }
+
+  @override
+  bool updateShouldNotify(FaceDetectionProvider oldWidget) =>
+      controller != oldWidget.controller;
+}
 
 /// A widget that locks its [body] behind face detection.
 ///
@@ -33,7 +56,7 @@ class FaceDetectionLock extends StatelessWidget {
     this.errorScreen,
     this.unverifiedScreen,
     this.tooManyFacesScreen,
-    this.isBlocInitializeAbove = false,
+    this.isControllerProvidedAbove = false,
     this.cameraController,
     this.verificationProvider,
     this.maxFaces,
@@ -45,8 +68,9 @@ class FaceDetectionLock extends StatelessWidget {
   /// The widget to secure behind the face detection lock.
   final Widget body;
 
-  /// Set to `true` if the BlocProvider is initialized higher in the widget tree.
-  final bool isBlocInitializeAbove;
+  /// Set to `true` if the [FaceDetectionProvider] is initialized higher in the
+  /// widget tree.
+  final bool isControllerProvidedAbove;
 
   /// Custom error widget shown when no camera is detected on the device.
   final Widget? noCameraDetectedErrorScreen;
@@ -81,18 +105,18 @@ class FaceDetectionLock extends StatelessWidget {
   /// before unlocking. Supports any [FaceVerificationProvider] — local,
   /// cloud, or custom.
   ///
-  /// Only used when [isBlocInitializeAbove] is false (the widget creates
-  /// the BLoC internally). When managing the BLoC yourself, pass the
-  /// provider directly to [FaceDetectionBloc].
+  /// Only used when [isControllerProvidedAbove] is false (the widget creates
+  /// the controller internally). When managing the controller yourself, pass
+  /// the provider directly to [FaceDetectionController].
   final FaceVerificationProvider? verificationProvider;
 
   /// Maximum number of faces allowed before locking.
   /// When `null` (default), any number of faces is accepted.
-  /// Only used when [isBlocInitializeAbove] is false.
+  /// Only used when [isControllerProvidedAbove] is false.
   final int? maxFaces;
 
   /// Policy for handling multiple detected faces.
-  /// Only used when [isBlocInitializeAbove] is false.
+  /// Only used when [isControllerProvidedAbove] is false.
   final MultiFacePolicy multiFacePolicy;
 
   /// Duration of the fade transition between lock/unlock states.
@@ -101,11 +125,11 @@ class FaceDetectionLock extends StatelessWidget {
   /// Whether to trigger haptic feedback on lock/unlock transitions.
   final bool enableHapticFeedback;
 
-  static FaceDetectionBloc? _faceDetectionBloc;
+  static FaceDetectionController? _controller;
 
   @override
   Widget build(BuildContext context) {
-    if (isBlocInitializeAbove) {
+    if (isControllerProvidedAbove) {
       return _LifecycleAwareBody(
         body: body,
         noCameraDetectedErrorScreen: noCameraDetectedErrorScreen,
@@ -120,14 +144,14 @@ class FaceDetectionLock extends StatelessWidget {
         enableHapticFeedback: enableHapticFeedback,
       );
     }
-    _faceDetectionBloc = FaceDetectionBloc(
+    _controller = FaceDetectionController(
       cameraController: cameraController,
       verificationProvider: verificationProvider,
       maxFaces: maxFaces,
       multiFacePolicy: multiFacePolicy,
-    )..add(const InitializeCam());
-    return BlocProvider.value(
-      value: _faceDetectionBloc!,
+    )..initializeCamera();
+    return FaceDetectionProvider(
+      controller: _controller!,
       child: _LifecycleAwareBody(
         body: body,
         noCameraDetectedErrorScreen: noCameraDetectedErrorScreen,
@@ -180,6 +204,8 @@ class _LifecycleAwareBody extends StatefulWidget {
 
 class _LifecycleAwareBodyState extends State<_LifecycleAwareBody>
     with WidgetsBindingObserver {
+  FaceDetectionState? _previousState;
+
   @override
   void initState() {
     super.initState();
@@ -194,43 +220,16 @@ class _LifecycleAwareBodyState extends State<_LifecycleAwareBody>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final bloc = context.read<FaceDetectionBloc>();
+    final controller = FaceDetectionProvider.of(context);
     switch (state) {
       case AppLifecycleState.paused:
       case AppLifecycleState.inactive:
       case AppLifecycleState.detached:
       case AppLifecycleState.hidden:
-        bloc.add(const PauseDetection());
+        controller.pause();
       case AppLifecycleState.resumed:
-        bloc.add(const ResumeDetection());
+        controller.resume();
     }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return BlocConsumer<FaceDetectionBloc, FaceDetectionState>(
-      listenWhen: (prev, curr) =>
-          widget.enableHapticFeedback && _isLockTransition(prev, curr),
-      listener: (context, state) {
-        if (state is FaceDetectionSuccess) {
-          HapticFeedback.lightImpact();
-        } else if (state is FaceDetectionNoFace ||
-            state is FaceDetectionUnverified ||
-            state is FaceDetectionTooManyFaces) {
-          HapticFeedback.mediumImpact();
-        }
-      },
-      builder: (context, state) {
-        final child = _buildForState(state);
-        return AnimatedSwitcher(
-          duration: widget.transitionDuration,
-          child: KeyedSubtree(
-            key: ValueKey(state.runtimeType),
-            child: child,
-          ),
-        );
-      },
-    );
   }
 
   bool _isLockTransition(FaceDetectionState prev, FaceDetectionState curr) {
@@ -243,6 +242,41 @@ class _LifecycleAwareBodyState extends State<_LifecycleAwareBody>
         curr is FaceDetectionUnverified ||
         curr is FaceDetectionTooManyFaces;
     return (wasLocked && isUnlocked) || (wasUnlocked && isLocked);
+  }
+
+  void _handleHapticFeedback(FaceDetectionState state) {
+    if (!widget.enableHapticFeedback) return;
+    if (_previousState != null && _isLockTransition(_previousState!, state)) {
+      if (state is FaceDetectionSuccess) {
+        HapticFeedback.lightImpact();
+      } else if (state is FaceDetectionNoFace ||
+          state is FaceDetectionUnverified ||
+          state is FaceDetectionTooManyFaces) {
+        HapticFeedback.mediumImpact();
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = FaceDetectionProvider.of(context);
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final state = controller.state;
+        _handleHapticFeedback(state);
+        _previousState = state;
+
+        final child = _buildForState(state);
+        return AnimatedSwitcher(
+          duration: widget.transitionDuration,
+          child: KeyedSubtree(
+            key: ValueKey(state.runtimeType),
+            child: child,
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildForState(FaceDetectionState state) {

@@ -11,9 +11,6 @@ dependencies:
     sdk: flutter
   face_detection_lock:
     path: ../
-  # Re-export for direct BLoC usage in the advanced example.
-  # ignore: depend_on_referenced_packages
-  flutter_bloc: ^8.1.6
 
 dev_dependencies:
   flutter_lints: ^2.0.0
